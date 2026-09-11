@@ -1,0 +1,77 @@
+# Keeps `develop` in step with `main` automatically.
+#
+# Every time anything lands on `main` (normally a merge commit from a `develop` pull request),
+# this fast-forwards the remote `develop` branch to match. Locally you then just pull, or press
+# Sync Changes in VS Code, instead of remembering `git pull origin main`.
+#
+# It never forces anything. If `develop` has commits that `main` does not, it prints a warning
+# and stops, because silently overwriting a branch is how work gets lost.
+#
+# Move this file to .github/workflows/back-merge.yml
+
+name: back-merge
+
+on:
+  push:
+    branches: [main]
+
+# The default token is read-only. Pushing a branch needs write access to repository contents,
+# and nothing else, so that is all this asks for.
+permissions:
+  contents: write
+
+# Two merges landing close together would otherwise race each other to push the same branch.
+# This queues them instead. cancel-in-progress stays false: every push to main should be
+# processed, not just the most recent one.
+concurrency:
+  group: back-merge
+  cancel-in-progress: false
+
+jobs:
+  fast-forward-develop:
+    name: fast-forward develop to main
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 gets the full history. The default shallow clone has no merge base to
+      # reason about, so the ancestry check below would not work.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward develop
+        run: |
+          # Explicit refspec so origin/develop definitely exists as a ref afterwards. A bare
+          # `git fetch origin develop` only guarantees FETCH_HEAD, which is easy to get wrong.
+          if ! git fetch origin +refs/heads/develop:refs/remotes/origin/develop 2>/dev/null; then
+            echo "No develop branch on the remote yet. Nothing to do."
+            echo "No \`develop\` branch found." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # HEAD is main, because that is what was just pushed and what checkout gave us.
+          # is-ancestor asks: is everything in develop already contained in main?
+          # If yes, a fast-forward is safe. If no, develop holds work of its own, so stop.
+          if git merge-base --is-ancestor origin/develop HEAD; then
+            git push origin HEAD:develop
+            echo "develop fast-forwarded to $(git rev-parse --short HEAD)"
+            echo "✅ \`develop\` fast-forwarded to \`$(git rev-parse --short HEAD)\`." \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            AHEAD=$(git rev-list --count HEAD..origin/develop)
+            echo "::warning::develop has $AHEAD commit(s) that main does not have; leaving it alone"
+            echo "⚠️ \`develop\` has **$AHEAD** commit(s) that \`main\` does not. Not touching it." \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "Resolve it yourself, for example:" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "git switch develop && git merge origin/main" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+# Worth knowing, and easy to forget in four months:
+#
+# A push made with the built-in GITHUB_TOKEN does NOT trigger other workflows. GitHub does this
+# deliberately to stop workflows setting each other off in a loop, and here it works in our favour:
+# this push to develop cannot re-trigger anything, so there is no cycle to worry about.
+#
+# The mild side effect is that once `develop` is added to the CI push trigger, CI will not run on
+# this particular push. That costs nothing: these exact commits already passed CI on main.
