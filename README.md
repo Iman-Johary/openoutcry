@@ -1,68 +1,137 @@
 # openoutcry
 
-**A public, leakage-free forward-evaluation record for cross-sectional asset ranking.**
+**Can a language model read the news and work out which crypto will do better than the rest
+tomorrow? Probably not. This is me checking, in public, every day.**
 
-Open outcry was how a bid was declared out loud in the open pit, where everyone heard it at the same
-moment. This system announces every prediction publicly before the outcome is known, and settles it
-against reality afterwards. The artifact is the record, not the return.
+---
 
-> **This is not investment advice.** It is not a recommendation, it is not personalised, and there is
-> no brokerage integration. Nothing here should be used to make a financial decision.
+## What this is
 
-## What it does
+Four times a day, this system reads the news that came out since it last looked, checks how 30 crypto
+assets have been behaving, and puts them in order: which it expects to do best over the next 6, 12
+and 24 hours, compared to the others.
 
-At fixed cutoffs (00:00, 06:00, 12:00, 18:00 UTC) the system builds a point-in-time bundle of market
-features and news for a fixed basket of assets, and every registered strategy ranks the basket by
-expected return *relative to the basket median* at 6h, 12h and 24h horizons. A separate scorer
-settles each prediction when its horizon matures and appends the result to an append-only record.
+Then it waits.
 
-## The three commitments
+When the time is up, it looks at what actually happened, scores the prediction, and adds the result
+to a public record. Nothing is edited afterwards. Every prediction is published before the outcome is
+known, and it stays there whether it was right or wrong.
 
-1. **No backtest, ever.** Any LLM used here was trained on text covering any period that could be
-   backtested, so a backtest would measure memory rather than forecasting. Forward-only, with a
-   leakage guard enforced by a required CI check.
-2. **Baselines go live before the agent.** M1 contains no LLM at all, so the agent is never the first
-   thing measured and can never be the only thing measured.
-3. **Pre-registration before the first prediction.** See `PREREGISTRATION.md`. The commit history is
-   the proof that the metrics and baselines were chosen before any results existed.
+The name comes from open outcry, the way trading worked before screens: you called out your bid in
+the open, where everyone could hear it. Same idea here.
+
+## What I expect to find
+
+Probably nothing.
+
+Predicting short-term price movements is close to the hardest thing you can ask a model to do, and if
+reading the news were enough, someone with a lot more money than me would already be doing it. So the
+honest expectation is that this will not beat a simple momentum rule once you account for trading
+costs.
+
+That is fine. **The interesting part is not whether it works, it is measuring properly whether it
+works,** which is something surprisingly few projects in this space actually do. A clear negative
+result is a real result, and it is the one this is built to be able to report.
+
+## The record
+
+📊 **[Live scoreboard](#)** *(coming once the first predictions go out)*
+
+Every strategy is scored on exactly the same data, side by side, including several deliberately
+simple ones that use no AI at all.
+
+## How it works
+
+**1. Look.** Collect the news published since the last checkpoint, and calculate how each asset has
+been moving. The price maths is done in code. The model never squints at a chart.
+
+**2. Think.** Several small agents each do one job: filter out the noise, summarise what actually
+matters for each asset, argue the bull and the bear case, then rank all 30 together.
+
+**3. Commit.** The ranking is written down, timestamped, and published. It can never be changed.
+
+**4. Settle.** Hours later, a separate process checks what really happened and appends the score.
+
+## Three rules I set before starting
+
+**I never test it on the past.** This sounds backwards, but there is a good reason. Any language
+model was trained on text that already covers historical events, so asking it to "predict" 2024 is
+really asking it to remember 2024. It would look brilliant and mean nothing. The only honest test is
+forwards, on days that have not happened yet, which is why this has to run in real time and why the
+record gets more useful the longer it goes.
+
+**The simple methods went first.** Before any AI was involved, five basic rules were already running
+and being scored: pure momentum, the reverse of momentum, a volume-based rule, and a random shuffle
+as a sanity check. If the clever version cannot beat a coin flip and a moving average, that is worth
+knowing, and it is much harder to notice if you never measured them.
+
+**I wrote down what counts as success before seeing any results.** What gets measured, which
+comparison is the real one, how long it runs. It is all in
+[PREREGISTRATION.md](PREREGISTRATION.md), committed before the first prediction, so the git history
+shows it was not decided afterwards to fit whatever came out. This is normal practice in clinical
+trials and rare in side projects, and the difference is the whole point of the exercise.
+
+## Why I built it
+
+I do research on recommender systems, so ranking things and arguing about whether the ranking is any
+good is the part I know best. I wanted to point that at a problem where the answer arrives on its
+own, every single day, and where nobody can dispute the correct answer once it has happened. Most
+evaluation work involves painstakingly labelling data by hand. Here the world labels it for you
+overnight.
+
+The rest of it, running things on a schedule in the cloud without babysitting them, was the part I
+had read about more than I had done, and this seemed like a better way to learn it than another
+tutorial.
 
 ## Status
 
-**M0.** Scaffold only. No live data source, no deployment, no predictions. The pipeline runs
-end-to-end on deterministic fixture data so that the interfaces, the store, the metrics and the
-leakage guard are all exercised by tests.
+Early. The machinery works end to end and is tested, the simple strategies are ready, and the live
+data source is being wired up now. No real predictions have been made yet. When they start, the
+scoreboard link above goes live and the counter starts at day one.
 
-## Quickstart
+## Running it yourself
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+pytest
 
-# one prediction run on fixture data
 python -m openoutcry predict --as-of 2026-01-02T00:00:00Z --config config/config.example.yaml
-
-# settle everything that matured at a later cutoff
-python -m openoutcry score --as-of 2026-01-03T00:00:00Z --config config/config.example.yaml
-
-# the record
-python -m openoutcry report --config config/config.example.yaml
+python -m openoutcry score   --as-of 2026-01-03T00:00:00Z --config config/config.example.yaml
+python -m openoutcry report
 ```
 
-## Layout
+Out of the box it runs on generated test data, so it works offline with no API keys. The numbers it
+prints are noise, deliberately.
 
-| Path | What |
+<details>
+<summary><b>What's in the repository</b></summary>
+
+| Path | What it does |
 |---|---|
-| `src/openoutcry/leakage.py` | The point-in-time guard. The most important file in the repo |
-| `src/openoutcry/clock.py` | Cutoffs, horizons, and what settles when |
-| `src/openoutcry/sources/` | `PriceSource` and `NewsSource` protocols, plus a deterministic fixture implementation |
-| `src/openoutcry/strategies/` | The `Strategy` protocol, the registry, and the five non-LLM baselines |
-| `src/openoutcry/scoring/` | Metrics (Spearman, nDCG@k, precision@k, long-short) and the scorer |
-| `src/openoutcry/store/` | Append-only SQLite store, enforced by triggers |
-| `tests/test_leakage_guard.py` | The required CI check |
+| `src/openoutcry/leakage.py` | Blocks anything published after a prediction's cutoff from reaching it. The most important file here |
+| `src/openoutcry/clock.py` | Checkpoints, horizons, and what gets settled when |
+| `src/openoutcry/sources/` | Where prices and news come from, behind an interface, plus offline test data |
+| `src/openoutcry/strategies/` | The strategy interface and the five simple baselines |
+| `src/openoutcry/scoring/` | Ranking metrics and the settlement process |
+| `src/openoutcry/store/` | The record itself. SQLite, append-only, enforced by the database |
+| `tests/test_leakage_guard.py` | Required to pass before anything can be merged |
 
-## Why the store is append-only but scoring is still re-runnable
+Predictions are immutable: the database physically refuses to update or delete them. Scores are
+append-only too but carry a version number, so a bug in a metric is fixed by appending corrected
+scores rather than quietly editing the old ones. You can see both.
 
-Predictions are immutable: a row is written once and the database refuses `UPDATE` and `DELETE` on
-that table. Scores are also append-only, but they carry a `scorer_version` and a `computed_at`, so
-fixing a metric bug means appending a new set of score rows rather than editing the old ones. The
-record then shows both what was computed and what it was corrected to.
+Crypto is where it starts, not where it stops. Prices and news sit behind a small interface, so
+adding gold or equities means writing one adapter and changing nothing else.
+
+</details>
+
+## This is not investment advice
+
+Not a recommendation, not personalised, no connection to any broker or exchange account. Nothing here
+should be used to make a financial decision, and no real money is traded on any of it. It is a
+measurement project that happens to use market data because the market grades your homework for free.
+
+---
+
+Built with Python, LangGraph, Docker, GitHub Actions and Azure Container Apps.

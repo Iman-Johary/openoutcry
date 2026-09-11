@@ -9,3 +9,11 @@ venv/
 *.sqlite-journal
 data/
 .env
+
+# Local-only, never pushed.
+# LOCAL-NOTES.md  : personal troubleshooting notes.
+# SPEC.md         : the design document. Written in job-search context, names employers and a
+#                   resume strategy, so it stays out of the public repo. The public-facing
+#                   documents are README.md and PREREGISTRATION.md.
+LOCAL-NOTES.md
+SPEC.md
