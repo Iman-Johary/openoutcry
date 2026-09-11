@@ -1,0 +1,29 @@
+# Example configuration. The real one is created at M1, once the venue and universe are chosen.
+run:
+  cutoff_hours: [0, 6, 12, 18]
+  horizons_h: [6, 12, 24]
+  top_k: 5
+  cost_bps_round_trip: 20
+
+universe:
+  # M0 placeholder. The real universe is 30 assets with a dated selection query (PREREGISTRATION §1).
+  assets: [AAA, BBB, CCC, DDD, EEE, FFF, GGG, HHH]
+
+sources:
+  price: fixture
+  news: fixture
+
+strategies:
+  # Ids are versioned: a change to a strategy is a new id, never an edit (PREREGISTRATION §6).
+  - random_permutation@1
+  - momentum_24h@1
+  - momentum_7d@1
+  - reversal_24h@1
+  - volume_change@1
+
+store:
+  path: data/openoutcry.sqlite
+
+budget:
+  # Enforced by the spend guard once an LLM strategy is registered (M2).
+  monthly_usd_cap: 30.0
